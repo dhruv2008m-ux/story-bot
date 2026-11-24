@@ -25,7 +25,7 @@ from moviepy.editor import (ImageClip, AudioFileClip, CompositeVideoClip, ColorC
 from moviepy.video.fx.all import crop
 import village_art as art
 
-MODEL = "gemini-2.5-flash"
+MODELS = ["gemini-flash-latest", "gemini-3.5-flash", "gemini-2.5-flash"]  # tried in order
 KIDS_STYLE = ("cute colorful 3D cartoon style for children, soft bright lighting, "
               "friendly smiling characters, main subject centered, no text")
 
@@ -72,17 +72,22 @@ SCHEMA_KIDS = ('Return JSON: {"title": "catchy title under 70 chars", "descripti
 # ---------------------------------------------------------------- helpers
 def gemini(prompt):
     key = os.environ["GEMINI_API_KEY"]
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL}:generateContent?key={key}"
     body = {"contents": [{"parts": [{"text": prompt}]}],
             "generationConfig": {"responseMimeType": "application/json"}}
-    r = None
-    for _ in range(4):
-        r = requests.post(url, json=body, timeout=180)
-        if r.ok:
-            text = r.json()["candidates"][0]["content"]["parts"][0]["text"]
-            return json.loads(text)
-        time.sleep(20)
-    r.raise_for_status()
+    last = None
+    for model in MODELS:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}"
+        for _ in range(3):
+            r = requests.post(url, json=body, timeout=180)
+            if r.ok:
+                text = r.json()["candidates"][0]["content"]["parts"][0]["text"]
+                return json.loads(text)
+            last = r
+            print(f"Gemini {model} error {r.status_code}: {r.text[:200]}")
+            if r.status_code == 404:   # model name not available -> try next model
+                break
+            time.sleep(20)
+    raise RuntimeError(f"Gemini failed: {last.status_code} {last.text[:300]}")
 
 
 def load_history(name):
